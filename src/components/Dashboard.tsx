@@ -4,6 +4,8 @@ import { reputationProgress, getReputationLevel } from '../data/reputation';
 import { WEATHER_MAP } from '../data/weather';
 import { STYLE_MAP } from '../data/styles';
 import { LOCATION_MAP } from '../data/locations';
+import { INFRA_MAP } from '../data/infrastructures';
+import { analyzeLayout } from '../engine/layout';
 import { Meter, ProgressBar, SectionHeader, StatTile, cx } from './ui';
 import {
   deltaColor,
@@ -26,6 +28,14 @@ export default function Dashboard() {
   const style = STYLE_MAP[game.festival.style];
   const location = LOCATION_MAP[game.festival.location];
   const { projection, lineup } = summary;
+
+  const layoutAnalysis = analyzeLayout(
+    game.plan.layout ?? [],
+    INFRA_MAP,
+    game.plan.infrastructures,
+  );
+  const layoutPlaced = layoutAnalysis.placedCount;
+  const layoutOwned = layoutAnalysis.totalOwned;
 
   const checklist: {
     phase: GamePhase;
@@ -63,6 +73,17 @@ export default function Dashboard() {
       label: 'Infrastructures',
       status: summary.infra.stageCapacity > 0 ? `${formatNumber(summary.infra.stageCapacity)} places` : 'Aucune scène !',
       ok: summary.infra.stageCapacity > 0,
+    },
+    {
+      phase: 'layout',
+      icon: '📍',
+      label: 'Plan du site',
+      status: layoutOwned === 0
+        ? 'Aucun équipement acheté'
+        : layoutPlaced === layoutOwned
+        ? `${layoutPlaced} placés · Score ${layoutAnalysis.score}/100`
+        : `${layoutPlaced}/${layoutOwned} placés`,
+      ok: layoutOwned === 0 || layoutPlaced === layoutOwned,
     },
     {
       phase: 'marketing',

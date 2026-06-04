@@ -29,6 +29,7 @@ function emptyPlan(): EditionPlan {
     bookedArtistIds: [],
     timetable: [],
     infrastructures: {},
+    layout: [],
     marketing: { units: {} },
     acceptedSponsorIds: [],
     ticketPrice: 39,
@@ -101,6 +102,10 @@ interface GameStore {
   setTimetableSlot: (slot: import('../types').TimetableSlot) => void;
   removeTimetableSlot: (artistId: string, stageId: string, day: number, slotIndex: number) => void;
   clearTimetableSlot: (stageId: string, day: number, slotIndex: number) => void;
+  // layout
+  placeLayoutItem: (infraId: string, x: number, y: number) => void;
+  removeLayoutItem: (x: number, y: number) => void;
+  clearLayout: () => void;
   // simulation
   runEdition: (choices: ResolvedChoice[]) => void;
   continueToNextEdition: () => void;
@@ -202,10 +207,14 @@ export const useGameStore = create<GameStore>()(
           const infra = { ...s.game.plan.infrastructures };
           if (qty <= 0) delete infra[id];
           else infra[id] = qty;
-          // Une scène retirée annule la programmation qui lui était assignée :
-          // les artistes concernés redeviennent disponibles dans le timetable.
+          const newQty = infra[id] ?? 0;
+          // Scène retirée → purger les créneaux du timetable
           const timetable = s.game.plan.timetable.filter((slot) => (infra[slot.stageId] ?? 0) > 0);
-          return { game: { ...s.game, plan: { ...s.game.plan, infrastructures: infra, timetable } } };
+          // Quantité réduite → purger les instances de layout qui dépassent
+          const layout = s.game.plan.layout.filter(
+            (item) => item.infraId !== id || item.instance < newQty,
+          );
+          return { game: { ...s.game, plan: { ...s.game.plan, infrastructures: infra, timetable, layout } } };
         }),
 
       incInfra: (id, delta) => {
@@ -274,6 +283,32 @@ export const useGameStore = create<GameStore>()(
           },
         })),
 
+      placeLayoutItem: (infraId, x, y) =>
+        set((s) => {
+          const plan = s.game.plan;
+          const owned = plan.infrastructures[infraId] ?? 0;
+          const alreadyPlaced = plan.layout.filter((p) => p.infraId === infraId).length;
+          if (alreadyPlaced >= owned) return {};
+          // Prochain index d'instance disponible
+          const usedInstances = new Set(plan.layout.filter((p) => p.infraId === infraId).map((p) => p.instance));
+          let instance = 0;
+          while (usedInstances.has(instance)) instance++;
+          // Supprimer tout item existant sur cette case, puis placer
+          const filtered = plan.layout.filter((p) => !(p.x === x && p.y === y));
+          return { game: { ...s.game, plan: { ...plan, layout: [...filtered, { infraId, instance, x, y }] } } };
+        }),
+
+      removeLayoutItem: (x, y) =>
+        set((s) => ({
+          game: {
+            ...s.game,
+            plan: { ...s.game.plan, layout: s.game.plan.layout.filter((p) => !(p.x === x && p.y === y)) },
+          },
+        })),
+
+      clearLayout: () =>
+        set((s) => ({ game: { ...s.game, plan: { ...s.game.plan, layout: [] } } })),
+
       runEdition: (choices: ResolvedChoice[]) => {
         const g = get().game;
         if (!g.festival) return;
@@ -329,11 +364,16 @@ export const useGameStore = create<GameStore>()(
 
           // report de la planification précédente (QoL) en filtrant ce qui n'existe plus
           const nextBookedIds = g.plan.bookedArtistIds.filter((id) => artistIds.has(id));
+          const nextInfra = { ...g.plan.infrastructures };
           const carriedPlan: EditionPlan = {
             bookedArtistIds: nextBookedIds,
-            // Le timetable est remis à zéro chaque édition (la programmation change)
+            // Timetable remis à zéro (la programmation change chaque année)
             timetable: [],
-            infrastructures: { ...g.plan.infrastructures },
+            infrastructures: nextInfra,
+            // Layout conservé (le terrain ne change pas), orphelins nettoyés
+            layout: (g.plan.layout ?? []).filter(
+              (item) => item.instance < (nextInfra[item.infraId] ?? 0),
+            ),
             marketing: { units: { ...g.plan.marketing.units } },
             acceptedSponsorIds: g.plan.acceptedSponsorIds.filter((id) => offerIds.has(id)),
             ticketPrice: g.plan.ticketPrice,
@@ -369,6 +409,7 @@ export const useGameStore = create<GameStore>()(
             g.festival.capacity ??= Math.min(DEFAULT_CAPACITY, loc?.maxCapacity ?? DEFAULT_CAPACITY);
           }
           if (g.plan && !Array.isArray(g.plan.timetable)) g.plan.timetable = [];
+          if (g.plan && !Array.isArray(g.plan.layout)) g.plan.layout = [];
         }
         return state as { game: GameState };
       },

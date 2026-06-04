@@ -27,6 +27,7 @@ import {
 } from './economy';
 import { applyEvents, type EventEffects, type ResolvedChoice } from './events';
 import { generateReviews, type FeedbackContext } from './feedback';
+import { analyzeLayout, layoutInfraMult } from './layout';
 import { clamp } from '../utils/format';
 import { makeRng } from '../utils/rng';
 
@@ -337,6 +338,10 @@ function computeCore(
   const programmingRaw = clamp(lineup.count === 0 ? 0 : programmingBase * countFactor, 0, 100);
   const programming = clamp(programmingRaw + ttAnalysis.satDelta * 0.5 - wastedArtistsPenalty, 0, 100);
 
+  // ---- Analyse du plan de placement ----------------------------------------
+  const layoutAnalysis = analyzeLayout(plan.layout ?? [], INFRA_MAP, plan.infrastructures);
+  const layoutMult = layoutInfraMult(layoutAnalysis.placedCount > 0 ? layoutAnalysis.score : null);
+
   // ---- Score Infrastructure -----------------------------------------------
   const essScores = [
     clamp(toiletCov, 0, 1.1) * qualityFactor('toilets'),
@@ -348,7 +353,7 @@ function computeCore(
     (infra.counts.parking > 0 ? clamp(parkingCov, 0, 1) * 4 : 0) +
     (infra.counts.camping > 0 ? 4 : 0) +
     (infra.counts.vip > 0 ? 4 : 0);
-  const infrastructure = clamp(infraCore + comfortBonus, 0, 100);
+  const infrastructure = clamp((infraCore + comfortBonus) * layoutMult, 0, 100);
 
   // ---- Score Organisation -------------------------------------------------
   // La sécurité/le personnel doivent suivre la présence réelle du jour de pointe.
@@ -453,7 +458,7 @@ function computeCore(
     reference, priceRatio, toiletCov, barCov, foodCov,
     revenue: { tickets: ticketRevenue, sponsors: sponsorsRevenue, barsFood: concessionRevenue, vip: vipRevenue, total: totalRevenue },
     expenses, profit, repDelta, reputationAfter, popularityAfter, level,
-    weatherDef, ttAnalysis,
+    weatherDef, ttAnalysis, layoutAnalysis,
   };
 }
 
@@ -517,6 +522,8 @@ export function runSimulation(input: SimulationInput): EditionResult {
     budgetAfter,
     timetableScore: core.ttAnalysis.score > 0 ? core.ttAnalysis.score : null,
     timetableIssues: core.ttAnalysis.issues,
+    layoutScore: core.layoutAnalysis.placedCount > 0 ? core.layoutAnalysis.score : null,
+    layoutIssues: core.layoutAnalysis.issues.map((i) => (i.type === 'bonus' ? '✓ ' : '⚠ ') + i.message),
     festivalDays: days,
   };
 
@@ -543,6 +550,7 @@ export interface EditionProjection {
   programming: number;
   infrastructure: number;
   organization: number;
+  layoutScore: number | null;
 }
 
 /** Projection « toutes choses neutres » pour aider le joueur pendant la prépa. */
@@ -570,5 +578,6 @@ export function projectEdition(input: Omit<SimulationInput, 'eventChoices'>): Ed
     programming: core.programming,
     infrastructure: core.infrastructure,
     organization: core.organization,
+    layoutScore: core.layoutAnalysis.placedCount > 0 ? core.layoutAnalysis.score : null,
   };
 }

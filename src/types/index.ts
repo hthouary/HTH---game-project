@@ -235,6 +235,8 @@ export interface EditionPlan {
   marketing: MarketingPlan;
   acceptedSponsorIds: string[];
   ticketPrice: number;
+  /** Items placés sur le plan du festival (grille 16×12) */
+  layout: PlacedItem[];
 }
 
 // ----- Niveaux de réputation -------------------------------------------------
@@ -312,6 +314,10 @@ export interface EditionReport {
   timetableScore: number | null;
   /** Problèmes détectés dans le timetable */
   timetableIssues: string[];
+  /** Score du plan de placement (0-100) — null si aucun item placé */
+  layoutScore: number | null;
+  /** Problèmes détectés dans le plan de placement */
+  layoutIssues: string[];
   /** Nombre de jours du festival */
   festivalDays: number;
 }
@@ -320,6 +326,19 @@ export interface VisitorReview {
   author: string;
   rating: number; // 0-5
   text: string;
+}
+
+// ----- Plan du festival (grille de placement) --------------------------------
+export const GRID_COLS = 16;
+export const GRID_ROWS = 12;
+/** Point de référence de l'entrée (bas-centre de la grille) */
+export const GRID_ENTRANCE = { x: 8, y: 11 } as const;
+
+export interface PlacedItem {
+  infraId: string;
+  instance: number;
+  x: number;
+  y: number;
 }
 
 // ----- Planning horaire (timetable) -----------------------------------------
@@ -357,6 +376,7 @@ export type GamePhase =
   | 'programming'
   | 'timetable'
   | 'infrastructure'
+  | 'layout'
   | 'marketing'
   | 'sponsors'
   | 'tickets'

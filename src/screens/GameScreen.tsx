@@ -16,6 +16,7 @@ import SimulationScreen from '../components/SimulationScreen';
 import TimetablePanel from '../components/TimetablePanel';
 import FormatPanel from '../components/FormatPanel';
 import ReportScreen from '../components/ReportScreen';
+import LayoutPanel from '../components/LayoutPanel';
 import HistoryModal from '../components/HistoryModal';
 import type { GamePhase } from '../types';
 
@@ -25,6 +26,7 @@ const TABS: { id: GamePhase; icon: string; label: string; short: string }[] = [
   { id: 'programming', icon: '🎤', label: 'Programmation', short: 'Artistes' },
   { id: 'timetable', icon: '🗓️', label: 'Programme', short: 'Planning' },
   { id: 'infrastructure', icon: '🏗️', label: 'Infrastructures', short: 'Infra' },
+  { id: 'layout', icon: '📍', label: 'Plan du site', short: 'Plan' },
   { id: 'marketing', icon: '📣', label: 'Marketing', short: 'Pub' },
   { id: 'sponsors', icon: '🤝', label: 'Sponsors', short: 'Sponsors' },
   { id: 'tickets', icon: '🎟️', label: 'Billetterie', short: 'Billets' },
@@ -58,6 +60,8 @@ export default function GameScreen() {
         return <TimetablePanel />;
       case 'infrastructure':
         return <InfrastructurePanel />;
+      case 'layout':
+        return <LayoutPanel />;
       case 'marketing':
         return <MarketingPanel />;
       case 'sponsors':

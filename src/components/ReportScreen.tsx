@@ -231,6 +231,34 @@ export default function ReportScreen() {
           </div>
         )}
 
+        {/* Layout issues */}
+        {report.layoutIssues && report.layoutIssues.length > 0 && (
+          <div className="panel p-4 sm:p-5">
+            <h3 className="font-bold mb-3 flex items-center gap-2">
+              📍 Plan du site
+              {report.layoutScore != null && (
+                <Badge color={report.layoutScore >= 70 ? 'mint' : report.layoutScore >= 45 ? 'gold' : 'danger'}>
+                  Score {report.layoutScore}/100
+                </Badge>
+              )}
+            </h3>
+            <div className="space-y-1.5">
+              {report.layoutIssues.slice(0, 8).map((issue, i) => (
+                <div
+                  key={i}
+                  className={cx(
+                    'text-sm flex items-start gap-2',
+                    issue.startsWith('✓') ? 'text-festi-mint/90' : 'text-festi-gold/90',
+                  )}
+                >
+                  <span className="shrink-0 mt-0.5">{issue.startsWith('✓') ? '✓' : '⚠'}</span>
+                  <span>{issue.replace(/^[✓⚠]\s/, '')}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Avis */}
         <div className="panel p-4 sm:p-5">
           <h3 className="font-bold mb-3 flex items-center gap-2">💬 Ce que disent les festivaliers</h3>
