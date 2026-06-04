@@ -1,0 +1,108 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-festi-bg text-slate-100 font-display antialiased;
+    background-image:
+      radial-gradient(1200px 600px at 10% -10%, rgba(168, 85, 247, 0.18), transparent 60%),
+      radial-gradient(1000px 500px at 100% 0%, rgba(236, 72, 153, 0.14), transparent 55%),
+      radial-gradient(900px 700px at 50% 120%, rgba(52, 211, 153, 0.08), transparent 60%);
+    background-attachment: fixed;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-festi-border rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-festi-accent/60;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply bg-festi-panel/80 backdrop-blur border border-festi-border rounded-2xl shadow-xl;
+  }
+
+  .panel-2 {
+    @apply bg-festi-panel2/70 border border-festi-border rounded-xl;
+  }
+
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 font-semibold
+           transition-all duration-150 active:scale-[0.97] disabled:opacity-40
+           disabled:cursor-not-allowed disabled:active:scale-100 select-none;
+  }
+
+  .btn-primary {
+    @apply btn bg-gradient-to-r from-festi-accent to-festi-accent2 text-white
+           shadow-lg shadow-festi-accent/20 hover:brightness-110;
+  }
+
+  .btn-ghost {
+    @apply btn bg-festi-panel2 border border-festi-border text-slate-200 hover:border-festi-accent/60;
+  }
+
+  .btn-danger {
+    @apply btn bg-festi-danger/90 text-white hover:bg-festi-danger;
+  }
+
+  .btn-gold {
+    @apply btn bg-gradient-to-r from-amber-400 to-festi-gold text-festi-bg hover:brightness-105;
+  }
+
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+
+  .stat-card {
+    @apply panel-2 p-3 sm:p-4 flex flex-col gap-1;
+  }
+
+  .nav-tab {
+    @apply flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold whitespace-nowrap
+           transition-colors text-slate-400 hover:text-slate-100 hover:bg-festi-panel2;
+  }
+
+  .nav-tab-active {
+    @apply text-white bg-gradient-to-r from-festi-accent/30 to-festi-accent2/20
+           ring-1 ring-festi-accent/50;
+  }
+
+  .input {
+    @apply bg-festi-bg/60 border border-festi-border rounded-xl px-3 py-2.5 text-slate-100
+           outline-none focus:border-festi-accent/70 focus:ring-2 focus:ring-festi-accent/20
+           placeholder:text-slate-500 w-full;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
