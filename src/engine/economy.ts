@@ -116,6 +116,8 @@ export function aggregateLineup(
   bookedArtistIds: string[],
   artists: Artist[],
   style: MusicStyle,
+  /** Si fourni, seuls ces artistes contribuent à la qualité de show (timetable). Le coût reste total. */
+  scheduledArtistIds?: Set<string>,
 ): LineupAggregate {
   const map = new Map(artists.map((a) => [a.id, a]));
   const booked = bookedArtistIds.map((id) => map.get(id)).filter((a): a is Artist => !!a);
@@ -127,7 +129,21 @@ export function aggregateLineup(
     };
   }
 
-  let cost = 0;
+  // Les artistes non programmés paient quand même (cost complet)
+  const cost = booked.reduce((s, a) => s + a.cost, 0);
+
+  // Seuls les artistes programmés (ou tous si pas de timetable) contribuent à la qualité
+  const performing = scheduledArtistIds
+    ? booked.filter((a) => scheduledArtistIds.has(a.id))
+    : booked;
+
+  if (performing.length === 0) {
+    return {
+      count: 0, cost, drawPower: 0, quality: 0, satisfaction: 0,
+      headlinerPop: 0, genreMatch: 0, techLoad: 0, reliability: 0, headliners: [],
+    };
+  }
+
   let drawPower = 0;
   let qualityWeighted = 0;
   let satWeighted = 0;
@@ -137,11 +153,9 @@ export function aggregateLineup(
   let reliabilitySum = 0;
   let headlinerPop = 0;
 
-  for (const a of booked) {
+  for (const a of performing) {
     const aff = genreAffinity(style, a.genre);
-    cost += a.cost;
     drawPower += a.popularity * aff;
-    // pondère qualité/satisfaction par la popularité (les têtes d'affiche comptent plus)
     const w = a.popularity + 15;
     qualityWeighted += a.showQuality * aff * w;
     satWeighted += a.satisfaction * aff * w;
@@ -152,10 +166,10 @@ export function aggregateLineup(
     headlinerPop = Math.max(headlinerPop, a.popularity);
   }
 
-  const headliners = [...booked].sort((x, y) => y.popularity - x.popularity).slice(0, 3);
+  const headliners = [...performing].sort((x, y) => y.popularity - x.popularity).slice(0, 3);
 
   return {
-    count: booked.length,
+    count: performing.length,
     cost,
     drawPower,
     quality: clamp(qualityWeighted / popSum, 0, 100),
@@ -163,7 +177,7 @@ export function aggregateLineup(
     headlinerPop,
     genreMatch: clamp(matchWeighted / popSum, 0, 1),
     techLoad,
-    reliability: reliabilitySum / booked.length,
+    reliability: reliabilitySum / performing.length,
     headliners,
   };
 }

@@ -38,8 +38,17 @@ export default function Dashboard() {
       phase: 'programming',
       icon: '🎤',
       label: 'Programmation',
-      status: `${lineup.count} artiste${lineup.count > 1 ? 's' : ''}`,
+      status: `${game.plan.bookedArtistIds.length} réservé${game.plan.bookedArtistIds.length > 1 ? 's' : ''}, ${lineup.count} programmé${lineup.count > 1 ? 's' : ''}`,
       ok: lineup.count >= 3,
+    },
+    {
+      phase: 'timetable',
+      icon: '🗓️',
+      label: 'Programme horaire',
+      status: game.plan.timetable.length > 0
+        ? `${new Set(game.plan.timetable.map((s) => s.artistId)).size}/${game.plan.bookedArtistIds.length} artistes planifiés`
+        : 'Non configuré',
+      ok: game.plan.timetable.length > 0 || game.plan.bookedArtistIds.length === 0,
     },
     {
       phase: 'infrastructure',
@@ -78,7 +87,7 @@ export default function Dashboard() {
       <SectionHeader
         emoji="🏠"
         title="Tableau de bord"
-        subtitle={`${style.emoji} ${game.festival.style} · ${location.emoji} ${game.festival.location} — préparez l'édition ${game.edition}.`}
+        subtitle={`${style.emoji} ${game.festival.style} · ${location.emoji} ${game.festival.location} · ${(game.festival.days ?? 1)} jour${(game.festival.days ?? 1) > 1 ? 's' : ''} — préparez l'édition ${game.edition}.`}
         right={
           <button className="btn-primary" onClick={() => setPhase('simulation')} disabled={!readyToLaunch}>
             ▶️ Lancer l'édition {game.edition}

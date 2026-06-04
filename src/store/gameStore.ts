@@ -21,11 +21,12 @@ import { makeRng } from '../utils/rng';
 
 const STORAGE_KEY = 'festitoche-save-v1';
 const SAVE_VERSION = 1;
-const STARTING_BUDGET = 250000;
+const STARTING_BUDGET = 200000; // Budget réduit pour plus de difficulté
 
 function emptyPlan(): EditionPlan {
   return {
     bookedArtistIds: [],
+    timetable: [],
     infrastructures: {},
     marketing: { units: {} },
     acceptedSponsorIds: [],
@@ -73,7 +74,7 @@ interface GameStore {
   game: GameState;
   // cycle de vie
   hasSave: () => boolean;
-  newGame: (name: string, style: MusicStyle, location: LocationId) => void;
+  newGame: (name: string, style: MusicStyle, location: LocationId, month: number, days: number) => void;
   abandonGame: () => void;
   setPhase: (phase: GamePhase) => void;
   // planification
@@ -84,6 +85,10 @@ interface GameStore {
   toggleSponsor: (id: string) => void;
   setTicketPrice: (price: number) => void;
   resetPlan: () => void;
+  // timetable
+  setTimetableSlot: (slot: import('../types').TimetableSlot) => void;
+  removeTimetableSlot: (artistId: string, stageId: string, day: number, slotIndex: number) => void;
+  clearTimetableSlot: (stageId: string, day: number, slotIndex: number) => void;
   // simulation
   runEdition: (choices: ResolvedChoice[]) => void;
   continueToNextEdition: () => void;
@@ -96,14 +101,14 @@ export const useGameStore = create<GameStore>()(
 
       hasSave: () => get().game.festival !== null,
 
-      newGame: (name, style, location) => {
+      newGame: (name, style, location, month, days) => {
         const loc = LOCATION_MAP[location];
         const reputation = clamp(48 + loc.reputationBias, 0, 1000);
         const rng = makeRng(`${name}:1:forecast`);
         const now = Date.now();
         set({
           game: {
-            festival: { name: name.trim() || 'Mon Festival', style, location },
+            festival: { name: name.trim() || 'Mon Festival', style, location, month, days },
             edition: 1,
             budget: STARTING_BUDGET,
             reputation,
@@ -112,7 +117,7 @@ export const useGameStore = create<GameStore>()(
             lastTicketsSold: 0,
             artists: buildInitialArtists(),
             sponsorOffers: generateSponsorOffers(reputation, 1, name),
-            forecast: generateForecast(location, rng),
+            forecast: generateForecast(location, rng, month),
             plan: emptyPlan(),
             history: [],
             phase: 'dashboard',
@@ -130,10 +135,18 @@ export const useGameStore = create<GameStore>()(
       toggleArtist: (id) =>
         set((s) => {
           const booked = s.game.plan.bookedArtistIds;
-          const next = booked.includes(id)
-            ? booked.filter((a) => a !== id)
-            : [...booked, id];
-          return { game: { ...s.game, plan: { ...s.game.plan, bookedArtistIds: next } } };
+          const isBooked = booked.includes(id);
+          const nextBooked = isBooked ? booked.filter((a) => a !== id) : [...booked, id];
+          // Si on déréserve l'artiste, le retirer aussi du timetable
+          const nextTimetable = isBooked
+            ? s.game.plan.timetable.filter((slot) => slot.artistId !== id)
+            : s.game.plan.timetable;
+          return {
+            game: {
+              ...s.game,
+              plan: { ...s.game.plan, bookedArtistIds: nextBooked, timetable: nextTimetable },
+            },
+          };
         }),
 
       setInfra: (id, qty) =>
@@ -172,6 +185,43 @@ export const useGameStore = create<GameStore>()(
         })),
 
       resetPlan: () => set((s) => ({ game: { ...s.game, plan: emptyPlan() } })),
+
+      setTimetableSlot: (slot) =>
+        set((s) => {
+          // Retire toute assignation existante pour cet artiste OU pour cette cellule
+          const filtered = s.game.plan.timetable.filter(
+            (e) =>
+              !(e.day === slot.day && e.slotIndex === slot.slotIndex && e.stageId === slot.stageId) &&
+              e.artistId !== slot.artistId,
+          );
+          return { game: { ...s.game, plan: { ...s.game.plan, timetable: [...filtered, slot] } } };
+        }),
+
+      removeTimetableSlot: (artistId, stageId, day, slotIndex) =>
+        set((s) => ({
+          game: {
+            ...s.game,
+            plan: {
+              ...s.game.plan,
+              timetable: s.game.plan.timetable.filter(
+                (e) => !(e.artistId === artistId && e.stageId === stageId && e.day === day && e.slotIndex === slotIndex),
+              ),
+            },
+          },
+        })),
+
+      clearTimetableSlot: (stageId, day, slotIndex) =>
+        set((s) => ({
+          game: {
+            ...s.game,
+            plan: {
+              ...s.game.plan,
+              timetable: s.game.plan.timetable.filter(
+                (e) => !(e.stageId === stageId && e.day === day && e.slotIndex === slotIndex),
+              ),
+            },
+          },
+        })),
 
       runEdition: (choices: ResolvedChoice[]) => {
         const g = get().game;
@@ -220,11 +270,18 @@ export const useGameStore = create<GameStore>()(
           // nouvelles offres de sponsors & météo
           const sponsorOffers = generateSponsorOffers(g.reputation, nextEdition, g.festival.name);
           const offerIds = new Set(sponsorOffers.map((o) => o.id));
-          const forecast = generateForecast(g.festival.location, makeRng(`${g.festival.name}:${nextEdition}:forecast`));
+          const forecast = generateForecast(
+            g.festival.location,
+            makeRng(`${g.festival.name}:${nextEdition}:forecast`),
+            g.festival.month ?? 7,
+          );
 
           // report de la planification précédente (QoL) en filtrant ce qui n'existe plus
+          const nextBookedIds = g.plan.bookedArtistIds.filter((id) => artistIds.has(id));
           const carriedPlan: EditionPlan = {
-            bookedArtistIds: g.plan.bookedArtistIds.filter((id) => artistIds.has(id)),
+            bookedArtistIds: nextBookedIds,
+            // Le timetable est remis à zéro chaque édition (la programmation change)
+            timetable: [],
             infrastructures: { ...g.plan.infrastructures },
             marketing: { units: { ...g.plan.marketing.units } },
             acceptedSponsorIds: g.plan.acceptedSponsorIds.filter((id) => offerIds.has(id)),

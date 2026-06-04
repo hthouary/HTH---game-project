@@ -31,7 +31,10 @@ export function usePlanSummary(): PlanSummary | null {
   return useMemo(() => {
     if (!game.festival) return null;
     const location = LOCATION_MAP[game.festival.location];
-    const lineup = aggregateLineup(game.plan.bookedArtistIds, game.artists, game.festival.style);
+    const scheduledIds = game.plan.timetable.length > 0
+      ? new Set(game.plan.timetable.map((s) => s.artistId))
+      : undefined;
+    const lineup = aggregateLineup(game.plan.bookedArtistIds, game.artists, game.festival.style, scheduledIds);
     const infra = aggregateInfrastructure(game.plan.infrastructures);
     const marketing = aggregateMarketing(game.plan.marketing, game.festival.style);
     const spIncome = sponsorIncome(game.plan.acceptedSponsorIds, game.sponsorOffers);

@@ -5,12 +5,16 @@ import type {
   Festival,
   ReputationLevelId,
   Sponsor,
+  TimetableSlot,
   WeatherId,
 } from '../types';
+import { SLOTS_PER_DAY } from '../types';
 import { LOCATION_MAP } from '../data/locations';
 import { WEATHER_MAP } from '../data/weather';
 import { STYLE_MAP } from '../data/styles';
+import { INFRA_MAP } from '../data/infrastructures';
 import { getReputationLevel } from '../data/reputation';
+import { genreAffinity } from '../data/styles';
 import {
   aggregateInfrastructure,
   aggregateLineup,
@@ -25,14 +29,20 @@ import { generateReviews, type FeedbackContext } from './feedback';
 import { clamp } from '../utils/format';
 import { makeRng } from '../utils/rng';
 
+// Facteurs de foule par créneau horaire
+const SLOT_CROWD: readonly number[] = [0.25, 0.45, 0.65, 1.0, 0.85];
+
+// Facteur de présence par jour (jour 1 = montée en puissance, jour 2 = pic, etc.)
+const DAY_CROWD: readonly number[] = [0.8, 1.0, 1.05, 0.85];
+
 // ---- Paramètres de réglage (game balance) ----------------------------------
 const TUNING = {
-  drawWeight: 38,
-  awarenessWeight: 0.42,
-  popularityWeight: 90,
-  reputationWeight: 5,
-  base: 200,
-  satWeights: { programming: 0.4, infrastructure: 0.32, organization: 0.28 },
+  drawWeight: 32,           // réduit vs v1
+  awarenessWeight: 0.35,
+  popularityWeight: 105,    // la popularité compte plus
+  reputationWeight: 6,
+  base: 120,                // base réduite → plus difficile à remplir au départ
+  satWeights: { programming: 0.42, infrastructure: 0.30, organization: 0.28 },
 };
 
 const NEED_FRACTION = { toilets: 1, bars: DEMAND_FRACTION.bars!, food: DEMAND_FRACTION.food! };
@@ -58,32 +68,167 @@ export interface EditionResult {
   budgetAfter: number;
 }
 
+// ---- Analyse timetable ------------------------------------------------------
+export interface TimetableAnalysis {
+  score: number;           // 0-100
+  satDelta: number;        // impact sur la satisfaction globale
+  orgDelta: number;        // impact sur le score organisation
+  issues: string[];        // messages de problèmes
+  scheduledArtistIds: Set<string>;
+}
+
+export function analyzeTimetable(
+  timetable: TimetableSlot[],
+  artists: Artist[],
+  infrastructures: Record<string, number>,
+  attendance: number,
+  festivalStyle: string,
+  days: number,
+): TimetableAnalysis {
+  const artistMap = new Map(artists.map((a) => [a.id, a]));
+  const issues: string[] = [];
+  const scheduledArtistIds = new Set(timetable.map((s) => s.artistId));
+
+  if (timetable.length === 0) {
+    return { score: 0, satDelta: 0, orgDelta: 0, issues: [], scheduledArtistIds };
+  }
+
+  let totalPenalty = 0;
+  let totalBonus = 0;
+
+  for (let day = 0; day < days; day++) {
+    for (let slot = 0; slot < SLOTS_PER_DAY; slot++) {
+      const slotEntries = timetable.filter((s) => s.day === day && s.slotIndex === slot);
+      if (slotEntries.length === 0) continue;
+
+      const crowdPresent = Math.round(attendance * SLOT_CROWD[slot] * (DAY_CROWD[day] ?? 0.9));
+      if (crowdPresent === 0) continue;
+
+      // Calcule le pouvoir d'attraction total de ce créneau
+      let totalDraw = 0;
+      for (const entry of slotEntries) {
+        const artist = artistMap.get(entry.artistId);
+        if (!artist) continue;
+        const aff = genreAffinity(festivalStyle as any, artist.genre);
+        totalDraw += artist.popularity * aff;
+      }
+      if (totalDraw <= 0) continue;
+
+      // Détecte les clashes entre têtes d'affiche (pop > 68 au même créneau)
+      const headlinersInSlot = slotEntries
+        .map((e) => artistMap.get(e.artistId))
+        .filter((a): a is Artist => !!a && a.popularity > 68);
+
+      if (headlinersInSlot.length >= 2) {
+        const penalty = (headlinersInSlot.length - 1) * 6;
+        totalPenalty += penalty;
+        issues.push(
+          `Clash : ${headlinersInSlot.map((a) => a.name).join(' & ')} au même créneau — public divisé (-${penalty} sat)`,
+        );
+      }
+
+      // Vérifie le remplissage de chaque scène
+      for (const entry of slotEntries) {
+        const artist = artistMap.get(entry.artistId);
+        if (!artist) continue;
+
+        const stageOpt = INFRA_MAP[entry.stageId];
+        if (!stageOpt) continue;
+
+        const stageQty = infrastructures[entry.stageId] ?? 0;
+        const stageCapacity = stageOpt.capacity; // capacité par unité physique
+
+        const aff = genreAffinity(festivalStyle as any, artist.genre);
+        const artistDraw = (artist.popularity * aff) / totalDraw;
+        const crowdAtStage = Math.round(crowdPresent * artistDraw);
+        const fillRatio = stageCapacity > 0 ? crowdAtStage / stageCapacity : 0;
+
+        if (stageQty === 0) {
+          totalPenalty += 15;
+          issues.push(`${artist.name} assigné à une scène non achetée (${stageOpt.label}) !`);
+          continue;
+        }
+
+        if (fillRatio > 1.25) {
+          // Scène débordée → incident sécurité
+          const penalty = Math.round((fillRatio - 1) * 32);
+          totalPenalty += penalty;
+          issues.push(
+            `Surcharge critique : ${artist.name} sur ${stageOpt.label} (${Math.round(fillRatio * 100)}% capac.) — dangereux ! (-${penalty} sat)`,
+          );
+        } else if (fillRatio > 1.05) {
+          const penalty = Math.round((fillRatio - 1.0) * 18);
+          totalPenalty += penalty;
+          issues.push(
+            `Légère surcharge : ${artist.name} sur ${stageOpt.label} (${Math.round(fillRatio * 100)}%) (-${penalty} sat)`,
+          );
+        } else if (fillRatio < 0.2 && stageOpt.capacity >= 10000) {
+          // Grande scène quasi-vide → mauvaise image
+          const penalty = Math.round((0.25 - fillRatio) * 20);
+          totalPenalty += penalty;
+          issues.push(
+            `${stageOpt.label} clairsemée avec ${artist.name} (${Math.round(fillRatio * 100)}% capac.) — spectacle sans ambiance (-${penalty} sat)`,
+          );
+        } else if (fillRatio >= 0.7 && fillRatio <= 1.05) {
+          // Parfaite adéquation scène / artiste
+          totalBonus += 1.5;
+        }
+      }
+    }
+  }
+
+  // Artistes réservés mais non programmés → gaspillage
+  // (calculé dans computeCore qui connaît les bookedArtistIds)
+
+  const rawScore = clamp(60 + totalBonus * 2 - totalPenalty, 0, 100);
+  const satDelta = clamp(totalBonus * 0.8 - totalPenalty * 0.5, -30, 15);
+  const orgDelta = clamp(-totalPenalty * 0.6, -25, 0);
+
+  return {
+    score: Math.round(rawScore),
+    satDelta,
+    orgDelta,
+    issues: issues.slice(0, 8),
+    scheduledArtistIds,
+  };
+}
+
 // Cœur de calcul, partagé entre la simulation réelle et la projection.
 function computeCore(
   input: Omit<SimulationInput, 'eventChoices'>,
   eventEffects: EventEffects,
   randomness: number,
 ) {
-  const { festival, reputation, popularity, artists, sponsors, plan, weather } = input;
+  const { festival, edition, reputation, popularity, artists, sponsors, plan, weather } = input;
+  const days = festival.days ?? 1;
   const styleDef = STYLE_MAP[festival.style];
   const location = LOCATION_MAP[festival.location];
   const weatherDef = WEATHER_MAP[weather];
   const level = getReputationLevel(reputation);
 
-  const lineup = aggregateLineup(plan.bookedArtistIds, artists, festival.style);
+  // Utilise les artistes du timetable pour la qualité (si timetable renseigné)
+  const scheduledIds = plan.timetable.length > 0
+    ? new Set(plan.timetable.map((s) => s.artistId))
+    : null;
+
+  const lineup = aggregateLineup(plan.bookedArtistIds, artists, festival.style, scheduledIds ?? undefined);
   const infra = aggregateInfrastructure(plan.infrastructures);
   const marketing = aggregateMarketing(plan.marketing, festival.style);
   const capacity = computeCapacity(infra.stageCapacity, location, level);
 
-  // ---- Demande & fréquentation --------------------------------------------
+  // ---- Demande & fréquentation (plus progressive) -------------------------
   const reference = referenceTicketPrice(lineup, reputation, festival.style);
-  const priceFactor = clamp(1.5 - 0.5 * (plan.ticketPrice / Math.max(1, reference)), 0.12, 1.35);
+  const priceFactor = clamp(1.5 - 0.5 * (plan.ticketPrice / Math.max(1, reference)), 0.1, 1.35);
+
+  // Momentum : chaque édition réussie amplifie l'affluence (effet boule de neige)
+  const editionMomentum = Math.min((edition - 1) * 7 * Math.pow(clamp(popularity / 75, 0, 1.3), 1.5), 900);
 
   const basePool =
     lineup.drawPower * TUNING.drawWeight +
     marketing.awareness * TUNING.awarenessWeight +
     popularity * TUNING.popularityWeight +
     reputation * TUNING.reputationWeight +
+    editionMomentum +
     TUNING.base;
 
   const demand =
@@ -98,6 +243,26 @@ function computeCore(
   const attendance = Math.max(0, Math.min(Math.round(demand), capacity));
   const occupancy = capacity > 0 ? attendance / capacity : 0;
   const safeAttendance = Math.max(1, attendance);
+
+  // ---- Analyse timetable --------------------------------------------------
+  const ttAnalysis = analyzeTimetable(
+    plan.timetable,
+    artists,
+    plan.infrastructures,
+    attendance,
+    festival.style,
+    days,
+  );
+
+  // Pénalité artistes réservés mais non programmés (si timetable utilisé)
+  let wastedArtistsPenalty = 0;
+  if (plan.timetable.length > 0) {
+    const unscheduled = plan.bookedArtistIds.filter((id) => !ttAnalysis.scheduledArtistIds.has(id));
+    const unscheduledHighPop = unscheduled
+      .map((id) => artists.find((a) => a.id === id))
+      .filter((a): a is Artist => !!a && a.popularity >= 50);
+    wastedArtistsPenalty = unscheduledHighPop.length * 4;
+  }
 
   // ---- Couvertures infrastructure -----------------------------------------
   const coverage = (cat: keyof typeof NEED_FRACTION) =>
@@ -117,9 +282,10 @@ function computeCore(
   // ---- Score Programmation ------------------------------------------------
   const programmingBase =
     0.5 * lineup.satisfaction + 0.3 * lineup.quality + 0.2 * lineup.headlinerPop;
-  const expectedActs = clamp(capacity / 3000, 3, 14);
-  const countFactor = 0.65 + 0.35 * clamp(lineup.count / expectedActs, 0, 1.2);
-  const programming = clamp(lineup.count === 0 ? 0 : programmingBase * countFactor, 0, 100);
+  const expectedActs = clamp(capacity / 2500, 4, 16);
+  const countFactor = 0.55 + 0.45 * clamp(lineup.count / expectedActs, 0, 1.2);
+  const programmingRaw = clamp(lineup.count === 0 ? 0 : programmingBase * countFactor, 0, 100);
+  const programming = clamp(programmingRaw + ttAnalysis.satDelta * 0.5 - wastedArtistsPenalty, 0, 100);
 
   // ---- Score Infrastructure -----------------------------------------------
   const essScores = [
@@ -138,14 +304,13 @@ function computeCore(
   const safetyScore =
     (clamp(secCov, 0, 1) * 0.45 + clamp(staffCov, 0, 1) * 0.35 + clamp(parkingCov, 0, 1) * 0.2) * 100;
   const crowdPenalty =
-    occupancy > 0.9 ? (occupancy - 0.9) * 130 * (1 - clamp(infra.safety, 0, 0.8)) : 0;
-  const organization = clamp(safetyScore - crowdPenalty, 0, 100);
+    occupancy > 0.88 ? (occupancy - 0.88) * 150 * (1 - clamp(infra.safety, 0, 0.8)) : 0;
+  const organization = clamp(safetyScore + ttAnalysis.orgDelta - crowdPenalty, 0, 100);
 
   // ---- Satisfaction globale -----------------------------------------------
   const priceRatio = plan.ticketPrice / Math.max(1, reference);
-  const pricePenalty = priceRatio > 1.1 ? (priceRatio - 1.1) * 38 : 0;
+  const pricePenalty = priceRatio > 1.08 ? (priceRatio - 1.08) * 44 : 0;
 
-  // pénalité d'image des sponsors incompatibles
   const sponsorMap = new Map(sponsors.map((s) => [s.id, s]));
   let sponsorPenalty = 0;
   for (const id of plan.acceptedSponsorIds) {
@@ -162,11 +327,12 @@ function computeCore(
   global += weatherDef.satisfaction + eventEffects.satisfaction - pricePenalty - sponsorPenalty;
   global = clamp(global, 0, 100);
 
-  // ---- Recettes -----------------------------------------------------------
+  // ---- Recettes (multi-jours) ---------------------------------------------
   const concessionRevenue = (['bars', 'food', 'camping', 'parking'] as const).reduce((sum, cat) => {
     const frac = DEMAND_FRACTION[cat] ?? 1;
     const served = Math.min(infra.serves[cat], safeAttendance * frac);
-    return sum + served * infra.revenuePerHead[cat];
+    const dayConcessionMult = cat === 'camping' || cat === 'parking' ? 1 : days;
+    return sum + served * infra.revenuePerHead[cat] * dayConcessionMult;
   }, 0);
   const vipServed = Math.min(infra.serves.vip, safeAttendance * (DEMAND_FRACTION.vip ?? 0.12));
   const vipRevenue = vipServed * infra.revenuePerHead.vip;
@@ -174,13 +340,15 @@ function computeCore(
   const sponsorsRevenue = sponsorIncome(plan.acceptedSponsorIds, sponsors);
   const totalRevenue = ticketRevenue + sponsorsRevenue + concessionRevenue + vipRevenue;
 
-  // ---- Dépenses -----------------------------------------------------------
+  // ---- Dépenses (multi-jours pour staff/site) -----------------------------
+  const staffSecCostBase = infra.staffSecurityCost;
+  const locationCostBase = location.baseCost;
   const expenses = {
     artists: lineup.cost,
     infrastructure: infra.infraCost,
     marketing: marketing.cost,
-    staffSecurity: infra.staffSecurityCost,
-    location: location.baseCost,
+    staffSecurity: staffSecCostBase * days,
+    location: locationCostBase * days,
     events: -eventEffects.money,
     total: 0,
   };
@@ -196,21 +364,22 @@ function computeCore(
 
   // ---- Réputation ---------------------------------------------------------
   let repDelta =
-    (global - 58) * 0.9 +
-    (occupancy - 0.55) * 30 +
-    (lineup.headlinerPop - 50) * 0.2 +
-    infra.reputation * 0.25 +
+    (global - 60) * 0.95 +
+    (occupancy - 0.55) * 28 +
+    (lineup.headlinerPop - 50) * 0.18 +
+    infra.reputation * 0.22 +
     eventEffects.reputation;
-  if (repDelta > 0) repDelta *= clamp(1 - reputation / 1300, 0.25, 1);
-  repDelta = clamp(repDelta, -70, 95);
+  // La réputation est de plus en plus difficile à augmenter en haut
+  if (repDelta > 0) repDelta *= clamp(1 - reputation / 1400, 0.2, 1);
+  repDelta = clamp(repDelta, -80, 90);
   const reputationAfter = clamp(reputation + repDelta, 0, 1000);
 
-  // ---- Popularité du festival ---------------------------------------------
-  const popularityAfter = clamp(
-    popularity * 0.6 + global * 0.22 + occupancy * 12 + (eventEffects.buzz ? 6 : 0),
-    0,
-    100,
-  );
+  // ---- Popularité (dynamique progressive) ---------------------------------
+  // Croissance forte si bonne satisfaction, déclin significatif si mauvaise
+  const satFactor = (global - 52) / 50;
+  const occupancyBonus = (occupancy - 0.5) * 9;
+  const popularityDelta = satFactor * 14 + occupancyBonus + (eventEffects.buzz ? 5 : 0);
+  const popularityAfter = clamp(popularity + popularityDelta, 0, 100);
 
   return {
     lineup, infra, marketing, capacity, attendance, occupancy,
@@ -218,15 +387,17 @@ function computeCore(
     reference, priceRatio, toiletCov, barCov, foodCov,
     revenue: { tickets: ticketRevenue, sponsors: sponsorsRevenue, barsFood: concessionRevenue, vip: vipRevenue, total: totalRevenue },
     expenses, profit, repDelta, reputationAfter, popularityAfter, level,
-    weatherDef,
+    weatherDef, ttAnalysis,
   };
 }
 
 /** Lance la simulation complète d'une édition et produit le rapport. */
 export function runSimulation(input: SimulationInput): EditionResult {
+  const days = input.festival.days ?? 1;
   const rng = makeRng(`${input.festival.name}:${input.edition}:sim`);
   const { effects, resolved } = applyEvents(input.eventChoices);
-  const randomness = 0.95 + rng() * 0.1;
+  // Variance accrue pour plus de réalisme
+  const randomness = 0.88 + rng() * 0.26;
 
   const core = computeCore(input, effects, randomness);
   const levelBefore = getReputationLevel(input.reputation).id as ReputationLevelId;
@@ -276,6 +447,9 @@ export function runSimulation(input: SimulationInput): EditionResult {
     headliners: core.lineup.headliners.map((h) => h.name),
     budgetBefore: input.budget,
     budgetAfter,
+    timetableScore: core.ttAnalysis.score > 0 ? core.ttAnalysis.score : null,
+    timetableIssues: core.ttAnalysis.issues,
+    festivalDays: days,
   };
 
   return {

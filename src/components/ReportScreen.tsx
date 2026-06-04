@@ -43,7 +43,7 @@ export default function ReportScreen() {
             Édition {report.edition} — Rapport
           </h1>
           <p className="text-slate-400 mt-1">
-            {report.festivalName} · {weather.emoji} {weather.label} ·{' '}
+            {report.festivalName} · {weather.emoji} {weather.label} · {report.festivalDays ?? 1}j ·{' '}
             {formatNumber(report.attendance)} festivaliers
           </p>
         </header>
@@ -168,6 +168,28 @@ export default function ReportScreen() {
                   </div>
                   <div className="text-xs text-slate-400 mt-1">→ {e.chosenOption}</div>
                   <div className="text-xs text-festi-accent mt-0.5">{e.outcome}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Timetable issues */}
+        {report.timetableIssues && report.timetableIssues.length > 0 && (
+          <div className="panel p-4 sm:p-5">
+            <h3 className="font-bold mb-3 flex items-center gap-2">
+              🗓️ Problèmes de planning
+              {report.timetableScore != null && (
+                <Badge color={report.timetableScore >= 70 ? 'mint' : report.timetableScore >= 45 ? 'gold' : 'danger'}>
+                  Score {report.timetableScore}/100
+                </Badge>
+              )}
+            </h3>
+            <div className="space-y-1.5">
+              {report.timetableIssues.map((issue, i) => (
+                <div key={i} className="text-sm text-festi-gold/90 flex items-start gap-2">
+                  <span className="shrink-0 mt-0.5">⚠</span>
+                  <span>{issue}</span>
                 </div>
               ))}
             </div>

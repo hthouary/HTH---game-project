@@ -13,6 +13,7 @@ import MarketingPanel from '../components/MarketingPanel';
 import SponsorsPanel from '../components/SponsorsPanel';
 import TicketsPanel from '../components/TicketsPanel';
 import SimulationScreen from '../components/SimulationScreen';
+import TimetablePanel from '../components/TimetablePanel';
 import ReportScreen from '../components/ReportScreen';
 import HistoryModal from '../components/HistoryModal';
 import type { GamePhase } from '../types';
@@ -20,6 +21,7 @@ import type { GamePhase } from '../types';
 const TABS: { id: GamePhase; icon: string; label: string; short: string }[] = [
   { id: 'dashboard', icon: '🏠', label: 'Tableau de bord', short: 'Bord' },
   { id: 'programming', icon: '🎤', label: 'Programmation', short: 'Artistes' },
+  { id: 'timetable', icon: '🗓️', label: 'Programme', short: 'Planning' },
   { id: 'infrastructure', icon: '🏗️', label: 'Infrastructures', short: 'Infra' },
   { id: 'marketing', icon: '📣', label: 'Marketing', short: 'Pub' },
   { id: 'sponsors', icon: '🤝', label: 'Sponsors', short: 'Sponsors' },
@@ -48,6 +50,8 @@ export default function GameScreen() {
     switch (game.phase) {
       case 'programming':
         return <ArtistBooking />;
+      case 'timetable':
+        return <TimetablePanel />;
       case 'infrastructure':
         return <InfrastructurePanel />;
       case 'marketing':
@@ -77,6 +81,7 @@ export default function GameScreen() {
               <div className="font-extrabold leading-tight truncate">{game.festival.name}</div>
               <div className="text-[11px] text-slate-400 truncate">
                 Édition {game.edition} · {game.festival.location}
+                {game.festival.days > 1 && ` · ${game.festival.days}j`}
               </div>
             </div>
           </button>

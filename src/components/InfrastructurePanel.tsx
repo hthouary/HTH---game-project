@@ -1,6 +1,5 @@
 import { useGameStore } from '../store/gameStore';
 import { usePlanSummary } from '../hooks/usePlanSummary';
-import { getReputationLevel, REPUTATION_LEVELS } from '../data/reputation';
 import { INFRASTRUCTURES, INFRA_CATEGORIES } from '../data/infrastructures';
 import { DEMAND_FRACTION } from '../engine/economy';
 import { Badge, SectionHeader, Stepper, cx } from './ui';
@@ -25,7 +24,6 @@ export default function InfrastructurePanel() {
   const summary = usePlanSummary();
   if (!game.festival || !summary) return null;
 
-  const level = getReputationLevel(game.reputation);
   const attendance = Math.max(1, summary.projection.expectedAttendance);
   const { infra } = summary;
 
@@ -91,15 +89,12 @@ export default function InfrastructurePanel() {
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
               {options.map((o) => {
                 const qty = game.plan.infrastructures[o.id] ?? 0;
-                const locked = o.tier > level.tier;
-                const reqLevel = REPUTATION_LEVELS.find((l) => l.tier === o.tier);
                 return (
                   <div
                     key={o.id}
                     className={cx(
                       'panel-2 p-3 flex flex-col gap-2',
                       qty > 0 && 'ring-1 ring-festi-accent/50',
-                      locked && 'opacity-60',
                     )}
                   >
                     <div className="flex items-start justify-between gap-2">
@@ -124,18 +119,10 @@ export default function InfrastructurePanel() {
                     </div>
 
                     <div className="flex items-center justify-between mt-1">
-                      {locked ? (
-                        <div className="text-xs text-festi-gold">
-                          🔒 {reqLevel?.emoji} {reqLevel?.label}
-                        </div>
-                      ) : (
-                        <>
-                          <Stepper value={qty} onChange={(v) => incInfra(o.id, v - qty)} max={50} />
-                          <div className="text-sm font-bold tabular-nums">
-                            {qty > 0 ? formatMoney(o.cost * qty) : '—'}
-                          </div>
-                        </>
-                      )}
+                      <Stepper value={qty} onChange={(v) => incInfra(o.id, v - qty)} max={50} />
+                      <div className="text-sm font-bold tabular-nums">
+                        {qty > 0 ? formatMoney(o.cost * qty) : '—'}
+                      </div>
                     </div>
                   </div>
                 );

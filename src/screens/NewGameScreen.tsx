@@ -6,13 +6,37 @@ import { useGameStore } from '../store/gameStore';
 import { cx } from '../components/ui';
 import { formatMoney } from '../utils/format';
 
+const MONTHS = [
+  { m: 1, label: 'Janvier', season: '❄️ Hiver' },
+  { m: 2, label: 'Février', season: '❄️ Hiver' },
+  { m: 3, label: 'Mars', season: '🌸 Printemps' },
+  { m: 4, label: 'Avril', season: '🌸 Printemps' },
+  { m: 5, label: 'Mai', season: '🌸 Printemps' },
+  { m: 6, label: 'Juin', season: '☀️ Été' },
+  { m: 7, label: 'Juillet', season: '☀️ Été' },
+  { m: 8, label: 'Août', season: '☀️ Été' },
+  { m: 9, label: 'Septembre', season: '🍂 Automne' },
+  { m: 10, label: 'Octobre', season: '🍂 Automne' },
+  { m: 11, label: 'Novembre', season: '🍂 Automne' },
+  { m: 12, label: 'Décembre', season: '❄️ Hiver' },
+];
+
+const DAYS_OPTIONS = [
+  { d: 1, label: '1 jour', hint: 'Format classique' },
+  { d: 2, label: '2 jours', hint: 'Weekend festival' },
+  { d: 3, label: '3 jours', hint: 'Grand festival' },
+  { d: 4, label: '4 jours', hint: 'Méga festival' },
+];
+
 export default function NewGameScreen() {
   const newGame = useGameStore((s) => s.newGame);
   const [name, setName] = useState('');
   const [style, setStyle] = useState<MusicStyle | null>(null);
   const [location, setLocation] = useState<LocationId | null>(null);
+  const [month, setMonth] = useState<number | null>(null);
+  const [days, setDays] = useState<number | null>(null);
 
-  const canStart = name.trim().length >= 2 && style && location;
+  const canStart = name.trim().length >= 2 && style && location && month && days;
 
   return (
     <div className="min-h-screen flex flex-col items-center px-4 py-8 sm:py-12">
@@ -99,16 +123,63 @@ export default function NewGameScreen() {
             </div>
           </section>
 
+          {/* Mois */}
+          <section>
+            <label className="block font-bold mb-1 text-lg">4 · Mois du festival</label>
+            <p className="text-slate-400 text-sm mb-3">
+              La saison influe sur la météo prévue et donc sur l'affluence et la satisfaction.
+            </p>
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+              {MONTHS.map(({ m, label, season }) => (
+                <button
+                  key={m}
+                  onClick={() => setMonth(m)}
+                  className={cx(
+                    'panel-2 p-2 text-center transition-all hover:border-festi-accent/60 hover:-translate-y-0.5',
+                    month === m && 'ring-2 ring-festi-accent border-festi-accent bg-festi-accent/10',
+                  )}
+                >
+                  <div className="font-semibold text-sm">{label}</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">{season}</div>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {/* Durée */}
+          <section>
+            <label className="block font-bold mb-1 text-lg">5 · Durée du festival</label>
+            <p className="text-slate-400 text-sm mb-3">
+              Les festivals multi-jours attirent plus de public et génèrent plus de revenus F&B, mais les frais de
+              staff et de location s'accumulent chaque jour.
+            </p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {DAYS_OPTIONS.map(({ d, label, hint }) => (
+                <button
+                  key={d}
+                  onClick={() => setDays(d)}
+                  className={cx(
+                    'panel-2 p-3 text-center transition-all hover:border-festi-accent/60 hover:-translate-y-0.5',
+                    days === d && 'ring-2 ring-festi-accent border-festi-accent bg-festi-accent/10',
+                  )}
+                >
+                  <div className="font-bold text-xl">{label}</div>
+                  <div className="text-[11px] text-slate-400 mt-1">{hint}</div>
+                </button>
+              ))}
+            </div>
+          </section>
+
           {/* CTA */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2 border-t border-festi-border">
             <div className="text-sm text-slate-400">
               Budget de départ :{' '}
-              <span className="font-bold text-festi-gold">{formatMoney(250000)}</span>
+              <span className="font-bold text-festi-gold">{formatMoney(200000)}</span>
             </div>
             <button
               className="btn-primary w-full sm:w-auto text-lg px-8 py-3 disabled:grayscale"
               disabled={!canStart}
-              onClick={() => style && location && newGame(name, style, location)}
+              onClick={() => style && location && month && days && newGame(name, style, location, month, days)}
             >
               🚀 Lancer ma première édition
             </button>

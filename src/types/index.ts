@@ -228,6 +228,8 @@ export interface ResolvedEvent {
 // ----- État de planification de l'édition en cours ---------------------------
 export interface EditionPlan {
   bookedArtistIds: string[];
+  /** Programme horaire des artistes */
+  timetable: TimetableSlot[];
   /** infraOptionId -> quantité achetée */
   infrastructures: Record<string, number>;
   marketing: MarketingPlan;
@@ -300,6 +302,12 @@ export interface EditionReport {
   headliners: string[];
   budgetBefore: number;
   budgetAfter: number;
+  /** Score du timetable (0-100) — null si pas de timetable */
+  timetableScore: number | null;
+  /** Problèmes détectés dans le timetable */
+  timetableIssues: string[];
+  /** Nombre de jours du festival */
+  festivalDays: number;
 }
 
 export interface VisitorReview {
@@ -308,17 +316,37 @@ export interface VisitorReview {
   text: string;
 }
 
+// ----- Planning horaire (timetable) -----------------------------------------
+export const SLOTS_PER_DAY = 5;
+export const SLOT_LABELS = ['Ouverture (12h)', 'Après-midi (15h)', 'Pré-soirée (18h)', 'Soirée (21h)', 'Nuit (00h)'];
+export const SLOT_CROWD_FACTOR = [0.25, 0.45, 0.65, 1.0, 0.85] as const;
+
+export interface TimetableSlot {
+  artistId: string;
+  /** ID de l'infra scène (stage_small, stage_medium, stage_big, stage_main) */
+  stageId: string;
+  /** Jour dans le festival (0-indexed) */
+  day: number;
+  /** Créneau horaire dans la journée (0-4) */
+  slotIndex: number;
+}
+
 // ----- Festival (état persistant principal) ----------------------------------
 export interface Festival {
   name: string;
   style: MusicStyle;
   location: LocationId;
+  /** Mois de l'édition (1 = janvier, 12 = décembre) */
+  month: number;
+  /** Durée en jours (1 à 4) */
+  days: number;
 }
 
 // ----- Phases du jeu ---------------------------------------------------------
 export type GamePhase =
   | 'dashboard'
   | 'programming'
+  | 'timetable'
   | 'infrastructure'
   | 'marketing'
   | 'sponsors'
