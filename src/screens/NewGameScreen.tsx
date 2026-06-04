@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import type { LocationId, MusicStyle } from '../types';
 import { MUSIC_STYLES } from '../data/styles';
-import { LOCATIONS } from '../data/locations';
+import { LOCATIONS, LOCATION_MAP } from '../data/locations';
 import { useGameStore } from '../store/gameStore';
 import { cx } from '../components/ui';
-import { formatMoney } from '../utils/format';
+import { formatMoney, formatNumber } from '../utils/format';
 
 const MONTHS = [
   { m: 1, label: 'Janvier', season: '❄️ Hiver' },
@@ -35,7 +35,10 @@ export default function NewGameScreen() {
   const [location, setLocation] = useState<LocationId | null>(null);
   const [month, setMonth] = useState<number | null>(null);
   const [days, setDays] = useState<number | null>(null);
+  const [capacity, setCapacity] = useState(8000);
 
+  const maxCapacity = location ? LOCATION_MAP[location].maxCapacity : 60000;
+  const effectiveCapacity = Math.min(capacity, maxCapacity);
   const canStart = name.trim().length >= 2 && style && location && month && days;
 
   return (
@@ -170,6 +173,36 @@ export default function NewGameScreen() {
             </div>
           </section>
 
+          {/* Capacité */}
+          <section>
+            <label className="block font-bold mb-1 text-lg">6 · Capacité d'accueil</label>
+            <p className="text-slate-400 text-sm mb-3">
+              Vous fixez la jauge maximale. L'affluence réelle dépendra de votre attractivité.
+              {location ? ` Maximum sur ce site : ${formatNumber(maxCapacity)}.` : ' Choisissez d\'abord une localisation.'}
+              {' '}Modifiable à chaque édition.
+            </p>
+            <div className="panel-2 p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-slate-400">Capacité visée</span>
+                <span className="text-2xl font-black tabular-nums">{formatNumber(effectiveCapacity)}</span>
+              </div>
+              <input
+                type="range"
+                min={1000}
+                max={maxCapacity}
+                step={1000}
+                value={effectiveCapacity}
+                disabled={!location}
+                onChange={(e) => setCapacity(Number(e.target.value))}
+                className="w-full accent-festi-accent2 cursor-pointer disabled:opacity-40"
+              />
+              <div className="flex justify-between text-[11px] text-slate-500">
+                <span>1 000</span>
+                <span>Aménagement : {formatMoney(Math.round(effectiveCapacity * 1.2))}</span>
+              </div>
+            </div>
+          </section>
+
           {/* CTA */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2 border-t border-festi-border">
             <div className="text-sm text-slate-400">
@@ -179,7 +212,10 @@ export default function NewGameScreen() {
             <button
               className="btn-primary w-full sm:w-auto text-lg px-8 py-3 disabled:grayscale"
               disabled={!canStart}
-              onClick={() => style && location && month && days && newGame(name, style, location, month, days)}
+              onClick={() =>
+                style && location && month && days &&
+                newGame(name, style, location, month, days, effectiveCapacity)
+              }
             >
               🚀 Lancer ma première édition
             </button>

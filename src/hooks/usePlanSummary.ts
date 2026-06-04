@@ -5,6 +5,7 @@ import {
   aggregateInfrastructure,
   aggregateLineup,
   aggregateMarketing,
+  siteCost,
   sponsorIncome,
 } from '../engine/economy';
 import { projectEdition, type EditionProjection } from '../engine/simulation';
@@ -38,7 +39,11 @@ export function usePlanSummary(): PlanSummary | null {
     const infra = aggregateInfrastructure(game.plan.infrastructures);
     const marketing = aggregateMarketing(game.plan.marketing, game.festival.style);
     const spIncome = sponsorIncome(game.plan.acceptedSponsorIds, game.sponsorOffers);
-    const committed = lineup.cost + infra.cost + marketing.cost + location.baseCost;
+    const days = game.festival.days ?? 1;
+    const capacity = game.festival.capacity ?? 10000;
+    const site = siteCost(location, capacity, days);
+    const committed =
+      lineup.cost + infra.infraCost + infra.staffSecurityCost * days + marketing.cost + site;
     const available = game.budget + spIncome - committed;
 
     const projection = projectEdition({
@@ -62,7 +67,7 @@ export function usePlanSummary(): PlanSummary | null {
       committed,
       available,
       projection,
-      locationCost: location.baseCost,
+      locationCost: site,
     };
   }, [game]);
 }

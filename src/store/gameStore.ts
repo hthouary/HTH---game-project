@@ -20,8 +20,9 @@ import { clamp } from '../utils/format';
 import { makeRng } from '../utils/rng';
 
 const STORAGE_KEY = 'festitoche-save-v1';
-const SAVE_VERSION = 1;
+const SAVE_VERSION = 2;
 const STARTING_BUDGET = 200000; // Budget réduit pour plus de difficulté
+const DEFAULT_CAPACITY = 10000;
 
 function emptyPlan(): EditionPlan {
   return {
@@ -74,9 +75,20 @@ interface GameStore {
   game: GameState;
   // cycle de vie
   hasSave: () => boolean;
-  newGame: (name: string, style: MusicStyle, location: LocationId, month: number, days: number) => void;
+  newGame: (
+    name: string,
+    style: MusicStyle,
+    location: LocationId,
+    month: number,
+    days: number,
+    capacity: number,
+  ) => void;
   abandonGame: () => void;
   setPhase: (phase: GamePhase) => void;
+  // format de l'édition (modifiable chaque année)
+  setFestivalDays: (days: number) => void;
+  setFestivalCapacity: (capacity: number) => void;
+  setFestivalMonth: (month: number) => void;
   // planification
   toggleArtist: (id: string) => void;
   setInfra: (id: string, qty: number) => void;
@@ -101,14 +113,15 @@ export const useGameStore = create<GameStore>()(
 
       hasSave: () => get().game.festival !== null,
 
-      newGame: (name, style, location, month, days) => {
+      newGame: (name, style, location, month, days, capacity) => {
         const loc = LOCATION_MAP[location];
         const reputation = clamp(48 + loc.reputationBias, 0, 1000);
         const rng = makeRng(`${name}:1:forecast`);
         const now = Date.now();
+        const cap = clamp(Math.round(capacity), 1000, loc.maxCapacity);
         set({
           game: {
-            festival: { name: name.trim() || 'Mon Festival', style, location, month, days },
+            festival: { name: name.trim() || 'Mon Festival', style, location, month, days, capacity: cap },
             edition: 1,
             budget: STARTING_BUDGET,
             reputation,
@@ -131,6 +144,41 @@ export const useGameStore = create<GameStore>()(
       abandonGame: () => set({ game: emptyGame() }),
 
       setPhase: (phase) => set((s) => ({ game: { ...s.game, phase } })),
+
+      setFestivalDays: (days) =>
+        set((s) => {
+          if (!s.game.festival) return {};
+          const d = clamp(Math.round(days), 1, 4);
+          // Changer la durée invalide le timetable (les jours changent)
+          return {
+            game: {
+              ...s.game,
+              festival: { ...s.game.festival, days: d },
+              plan: { ...s.game.plan, timetable: s.game.plan.timetable.filter((t) => t.day < d) },
+            },
+          };
+        }),
+
+      setFestivalCapacity: (capacity) =>
+        set((s) => {
+          if (!s.game.festival) return {};
+          const loc = LOCATION_MAP[s.game.festival.location];
+          const cap = clamp(Math.round(capacity), 1000, loc.maxCapacity);
+          return { game: { ...s.game, festival: { ...s.game.festival, capacity: cap } } };
+        }),
+
+      setFestivalMonth: (month) =>
+        set((s) => {
+          if (!s.game.festival) return {};
+          const m = clamp(Math.round(month), 1, 12);
+          // La météo dépend du mois : on régénère la prévision de l'édition en cours
+          const forecast = generateForecast(
+            s.game.festival.location,
+            makeRng(`${s.game.festival.name}:${s.game.edition}:forecast`),
+            m,
+          );
+          return { game: { ...s.game, festival: { ...s.game.festival, month: m }, forecast } };
+        }),
 
       toggleArtist: (id) =>
         set((s) => {
@@ -306,6 +354,21 @@ export const useGameStore = create<GameStore>()(
       name: STORAGE_KEY,
       version: SAVE_VERSION,
       partialize: (state) => ({ game: state.game }),
+      // Migration des sauvegardes antérieures (capacité / timetable / dates)
+      migrate: (persisted: unknown) => {
+        const state = persisted as { game?: GameState } | undefined;
+        const g = state?.game;
+        if (g) {
+          if (g.festival) {
+            const loc = LOCATION_MAP[g.festival.location];
+            g.festival.month ??= 7;
+            g.festival.days ??= 1;
+            g.festival.capacity ??= Math.min(DEFAULT_CAPACITY, loc?.maxCapacity ?? DEFAULT_CAPACITY);
+          }
+          if (g.plan && !Array.isArray(g.plan.timetable)) g.plan.timetable = [];
+        }
+        return state as { game: GameState };
+      },
     },
   ),
 );

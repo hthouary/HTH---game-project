@@ -35,6 +35,13 @@ export default function Dashboard() {
     ok: boolean;
   }[] = [
     {
+      phase: 'format',
+      icon: '📅',
+      label: 'Format',
+      status: `${formatNumber(game.festival.capacity ?? 0)} places · ${game.festival.days ?? 1}j`,
+      ok: true,
+    },
+    {
       phase: 'programming',
       icon: '🎤',
       label: 'Programmation',
@@ -147,7 +154,12 @@ export default function Dashboard() {
           value={game.history.length ? formatNumber(game.lastTicketsSold) : '—'}
           sub="Dernière édition"
         />
-        <StatTile icon="🏟️" label="Capacité max" value={formatNumber(projection.capacity)} sub="Selon vos scènes" />
+        <StatTile
+          icon="🏟️"
+          label="Capacité"
+          value={formatNumber(projection.capacity)}
+          sub={projection.soldOut ? '🔥 Complet prévu' : `${Math.round(projection.occupancy * 100)}% rempli`}
+        />
         <StatTile icon="🔥" label="Popularité" value={`${Math.round(game.popularity)}/100`} sub="Hype du festival" />
         <StatTile icon={weather.emoji} label="Météo prévue" value={weather.label} sub="Pour cette édition" />
         <StatTile
@@ -193,7 +205,9 @@ export default function Dashboard() {
             <div className="panel-2 p-2.5 text-center">
               <div className="text-xs text-slate-400">Affluence</div>
               <div className="font-extrabold tabular-nums">{formatNumber(projection.expectedAttendance)}</div>
-              <div className="text-[11px] text-slate-500">{Math.round(projection.occupancy * 100)}% rempli</div>
+              <div className={cx('text-[11px]', projection.soldOut ? 'text-festi-gold' : 'text-slate-500')}>
+                {projection.soldOut ? '🔥 complet' : `${Math.round(projection.occupancy * 100)}% rempli`}
+              </div>
             </div>
             <div className="panel-2 p-2.5 text-center">
               <div className="text-xs text-slate-400">Recettes</div>
@@ -221,9 +235,11 @@ export default function Dashboard() {
           <div className={cx('mt-3 text-sm font-semibold', ratingColor(projection.satisfaction))}>
             {projection.expectedProfit < 0
               ? '⚠️ Budget déficitaire prévu : ajustez prix, line-up ou dépenses.'
-              : projection.occupancy < 0.5
-                ? '📉 Affluence faible attendue : renforcez line-up & marketing.'
-                : '👍 Configuration solide. Prêt à lancer quand vous voulez !'}
+              : projection.soldOut
+                ? '🔥 Complet attendu : pensez à agrandir la capacité ou monter le prix !'
+                : projection.demandPressure < 0.35
+                  ? '📉 Demande faible vs capacité : renforcez line-up & marketing, ou réduisez la jauge.'
+                  : '👍 Configuration solide. Prêt à lancer quand vous voulez !'}
           </div>
         </div>
       </div>

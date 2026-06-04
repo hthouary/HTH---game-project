@@ -265,6 +265,12 @@ export interface EditionReport {
   capacity: number;
   ticketsSold: number;
   ticketPrice: number;
+  /** Affluence jour par jour (présence quotidienne) */
+  perDayAttendance: number[];
+  /** Festival complet (demande >= capacité) */
+  soldOut: boolean;
+  /** Pression de la demande (demande potentielle / capacité), peut dépasser 1 */
+  demandPressure: number;
   // Finances
   revenue: {
     tickets: number;
@@ -340,11 +346,14 @@ export interface Festival {
   month: number;
   /** Durée en jours (1 à 4) */
   days: number;
+  /** Capacité d'accueil choisie par l'organisateur (jauge max de billets) */
+  capacity: number;
 }
 
 // ----- Phases du jeu ---------------------------------------------------------
 export type GamePhase =
   | 'dashboard'
+  | 'format'
   | 'programming'
   | 'timetable'
   | 'infrastructure'

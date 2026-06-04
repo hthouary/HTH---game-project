@@ -14,12 +14,14 @@ import SponsorsPanel from '../components/SponsorsPanel';
 import TicketsPanel from '../components/TicketsPanel';
 import SimulationScreen from '../components/SimulationScreen';
 import TimetablePanel from '../components/TimetablePanel';
+import FormatPanel from '../components/FormatPanel';
 import ReportScreen from '../components/ReportScreen';
 import HistoryModal from '../components/HistoryModal';
 import type { GamePhase } from '../types';
 
 const TABS: { id: GamePhase; icon: string; label: string; short: string }[] = [
   { id: 'dashboard', icon: '🏠', label: 'Tableau de bord', short: 'Bord' },
+  { id: 'format', icon: '📅', label: 'Format', short: 'Format' },
   { id: 'programming', icon: '🎤', label: 'Programmation', short: 'Artistes' },
   { id: 'timetable', icon: '🗓️', label: 'Programme', short: 'Planning' },
   { id: 'infrastructure', icon: '🏗️', label: 'Infrastructures', short: 'Infra' },
@@ -48,6 +50,8 @@ export default function GameScreen() {
 
   const renderPhase = () => {
     switch (game.phase) {
+      case 'format':
+        return <FormatPanel />;
       case 'programming':
         return <ArtistBooking />;
       case 'timetable':

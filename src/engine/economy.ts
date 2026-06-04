@@ -5,7 +5,6 @@ import type {
   LocationDef,
   MarketingPlan,
   MusicStyle,
-  ReputationLevel,
   Sponsor,
 } from '../types';
 import { INFRA_MAP } from '../data/infrastructures';
@@ -84,12 +83,20 @@ export function aggregateInfrastructure(infrastructures: Record<string, number>)
   return agg;
 }
 
-export function computeCapacity(
-  stageCapacity: number,
-  location: LocationDef,
-  level: ReputationLevel,
-): number {
-  return Math.max(0, Math.min(stageCapacity, location.maxCapacity, level.capacityCap));
+/**
+ * La capacité du festival est désormais choisie par l'organisateur.
+ * Le lieu impose seulement une limite physique maximale (taille du terrain).
+ */
+export function computeCapacity(festivalCapacity: number, location: LocationDef): number {
+  return Math.max(0, Math.min(festivalCapacity, location.maxCapacity));
+}
+
+/** Coût d'aménagement du site (clôtures, viabilisation, terrain) selon la capacité visée. */
+export const SITE_COST_PER_HEAD = 1.2;
+
+/** Coût total du site : location du terrain (× jours) + aménagement (× capacité). */
+export function siteCost(location: LocationDef, capacity: number, days: number): number {
+  return location.baseCost * days + capacity * SITE_COST_PER_HEAD;
 }
 
 export interface LineupAggregate {
@@ -222,20 +229,35 @@ export function committedSpend(
   artists: Artist[],
   style: MusicStyle,
   location: LocationDef,
+  capacity: number,
+  days: number,
 ): number {
   const lineup = aggregateLineup(plan.bookedArtistIds, artists, style);
   const infra = aggregateInfrastructure(plan.infrastructures);
   const marketing = aggregateMarketing(plan.marketing, style);
-  return lineup.cost + infra.cost + marketing.cost + location.baseCost;
+  return (
+    lineup.cost +
+    infra.infraCost +
+    infra.staffSecurityCost * days +
+    marketing.cost +
+    siteCost(location, capacity, days)
+  );
 }
 
-/** Prix de référence « juste » attendu par le public, selon l'offre. */
+/**
+ * Prix de référence « juste » attendu par le public, selon l'offre.
+ * Plus le festival est populaire / réputé / long, plus le public tolère un billet cher.
+ */
 export function referenceTicketPrice(
   lineup: LineupAggregate,
   reputation: number,
+  popularity: number,
   style: MusicStyle,
+  days: number,
 ): number {
   const styleDef = STYLE_MAP[style];
-  const base = 22 + lineup.headlinerPop * 0.55 + lineup.count * 1.2 + reputation * 0.045;
-  return Math.round(base * (0.9 + styleDef.audienceFactor * 0.1));
+  const base =
+    16 + lineup.headlinerPop * 0.5 + lineup.count * 1.0 + reputation * 0.04 + popularity * 0.28;
+  const dayMult = 1 + (days - 1) * 0.5; // un pass multi-jours vaut plus cher
+  return Math.round(base * dayMult * (0.9 + styleDef.audienceFactor * 0.1));
 }

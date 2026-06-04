@@ -21,7 +21,7 @@ assert(artists.length >= 100, `Catalogue d'au moins 100 artistes (${TOTAL_ARTIST
 assert(artists.every((a) => isNum(a.cost) && a.cost >= 2500), 'Tous les cachets sont finis et >= 2500');
 assert(artists.every((a) => a.popularity >= 5 && a.popularity <= 99), 'Popularités dans [5,99]');
 
-const festival: Festival = { name: 'Vibrasson', style: 'EDM', location: 'Bord de mer', month: 7, days: 1 };
+const festival: Festival = { name: 'Vibrasson', style: 'EDM', location: 'Bord de mer', month: 7, days: 1, capacity: 10000 };
 const budget = 250000;
 
 // Sélection : artistes de palier 1 abordables

@@ -90,6 +90,41 @@ export default function ReportScreen() {
           </div>
         </div>
 
+        {/* Affluence par jour */}
+        {report.perDayAttendance && report.perDayAttendance.length > 1 && (
+          <div className="panel p-4 sm:p-5">
+            <h3 className="font-bold mb-3 flex items-center gap-2">📊 Affluence par jour</h3>
+            <div className="flex items-end gap-3 h-24">
+              {report.perDayAttendance.map((day, i) => {
+                const peak = Math.max(...report.perDayAttendance);
+                const pct = peak > 0 ? (day / peak) * 100 : 0;
+                const fill = day >= report.capacity * 0.98
+                  ? 'bg-festi-gold'
+                  : pct >= 75
+                    ? 'bg-festi-mint'
+                    : 'bg-festi-accent';
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
+                    <div className="text-[11px] text-slate-400 tabular-nums">{formatNumber(day)}</div>
+                    <div className="w-full flex items-end" style={{ height: '56px' }}>
+                      <div
+                        className={cx('w-full rounded-t transition-all', fill)}
+                        style={{ height: `${Math.max(4, pct)}%` }}
+                      />
+                    </div>
+                    <div className="text-[11px] text-slate-500">J{i + 1}</div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-3 mt-2 text-[11px] text-slate-400">
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-festi-gold inline-block" /> Complet</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-festi-mint inline-block" /> Fort</span>
+              <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-festi-accent inline-block" /> Normal</span>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* Finances */}
           <div className="panel p-4 sm:p-5">
