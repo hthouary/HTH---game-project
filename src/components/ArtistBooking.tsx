@@ -1,7 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { usePlanSummary } from '../hooks/usePlanSummary';
-import { getReputationLevel, REPUTATION_LEVELS } from '../data/reputation';
 import { genreAffinity, STYLE_MAP } from '../data/styles';
 import { Badge, ProgressBar, SectionHeader, cx } from './ui';
 import { formatMoney, formatMoneyShort, formatNumber } from '../utils/format';
@@ -9,6 +8,15 @@ import type { Artist, MusicStyle } from '../types';
 
 const GENRES: MusicStyle[] = ['Techno', 'EDM', 'Hardstyle', 'Rap', 'Rock', 'Pop'];
 type SortKey = 'popularity' | 'cost' | 'satisfaction';
+
+/** Prestige indicatif (dérivé de la popularité) — aucun verrou, juste un repère. */
+function prestigeLabel(pop: number): string {
+  if (pop >= 85) return '🌟 Superstar';
+  if (pop >= 70) return '🔥 Légende';
+  if (pop >= 52) return 'Tête d\'affiche';
+  if (pop >= 34) return 'Confirmé';
+  return 'Émergent';
+}
 
 function MiniStat({ label, value, max = 100 }: { label: string; value: number; max?: number }) {
   return (
@@ -34,10 +42,10 @@ export default function ArtistBooking() {
   const [query, setQuery] = useState('');
   const [genre, setGenre] = useState<MusicStyle | 'all'>('all');
   const [sort, setSort] = useState<SortKey>('popularity');
-  const [onlyAvailable, setOnlyAvailable] = useState(false);
+  const [onlyAffordable, setOnlyAffordable] = useState(false);
   const [onlyBooked, setOnlyBooked] = useState(false);
 
-  const level = getReputationLevel(game.reputation);
+  const available = summary?.available ?? Infinity;
   const bookedSet = useMemo(() => new Set(game.plan.bookedArtistIds), [game.plan.bookedArtistIds]);
 
   const filtered = useMemo(() => {
@@ -45,14 +53,14 @@ export default function ArtistBooking() {
       if (genre !== 'all' && a.genre !== genre) return false;
       if (query && !a.name.toLowerCase().includes(query.toLowerCase())) return false;
       if (onlyBooked && !bookedSet.has(a.id)) return false;
-      if (onlyAvailable && a.tier > level.tier) return false;
+      if (onlyAffordable && !bookedSet.has(a.id) && available < a.cost) return false;
       return true;
     });
     return list.sort((a, b) => {
       if (sort === 'cost') return a.cost - b.cost;
       return (b[sort] as number) - (a[sort] as number);
     });
-  }, [game.artists, genre, query, sort, onlyAvailable, onlyBooked, level.tier, bookedSet]);
+  }, [game.artists, genre, query, sort, onlyAffordable, onlyBooked, available, bookedSet]);
 
   if (!game.festival || !summary) return null;
   const style = game.festival.style;
@@ -62,7 +70,7 @@ export default function ArtistBooking() {
       <SectionHeader
         emoji="🎤"
         title="Programmation artistique"
-        subtitle={`${game.artists.length} artistes au catalogue. Recrutez selon votre budget et votre palier (${level.label}).`}
+        subtitle={`${game.artists.length} artistes au catalogue, tous recrutables dès le départ — seul votre budget décide. Les têtes d'affiche coûtent cher mais attirent les foules.`}
       />
 
       {/* Résumé du line-up */}
@@ -117,10 +125,10 @@ export default function ArtistBooking() {
           <option value="satisfaction">Tri : satisfaction</option>
         </select>
         <button
-          className={cx('btn-ghost py-2', onlyAvailable && 'ring-1 ring-festi-accent text-white')}
-          onClick={() => setOnlyAvailable((v) => !v)}
+          className={cx('btn-ghost py-2', onlyAffordable && 'ring-1 ring-festi-accent text-white')}
+          onClick={() => setOnlyAffordable((v) => !v)}
         >
-          🔓 Disponibles
+          💰 Abordables
         </button>
         <button
           className={cx('btn-ghost py-2', onlyBooked && 'ring-1 ring-festi-accent text-white')}
@@ -134,9 +142,7 @@ export default function ArtistBooking() {
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         {filtered.map((a: Artist) => {
           const isBooked = bookedSet.has(a.id);
-          const locked = a.tier > level.tier;
           const aff = genreAffinity(style, a.genre);
-          const reqLevel = REPUTATION_LEVELS.find((l) => l.tier === a.tier);
           const affordable = isBooked || summary.available >= a.cost;
           return (
             <div
@@ -144,7 +150,7 @@ export default function ArtistBooking() {
               className={cx(
                 'panel-2 p-3 transition-all',
                 isBooked && 'ring-2 ring-festi-accent border-festi-accent bg-festi-accent/10',
-                locked && 'opacity-60',
+                !isBooked && !affordable && 'opacity-60',
               )}
             >
               <div className="flex items-start justify-between gap-2">
@@ -160,7 +166,7 @@ export default function ArtistBooking() {
                 </div>
                 <div className="text-right shrink-0">
                   <div className="font-extrabold tabular-nums">{formatMoney(a.cost)}</div>
-                  <div className="text-[10px] text-slate-500">Palier {a.tier}</div>
+                  <div className="text-[10px] text-slate-500">{prestigeLabel(a.popularity)}</div>
                 </div>
               </div>
 
@@ -172,19 +178,13 @@ export default function ArtistBooking() {
               </div>
 
               <div className="mt-3">
-                {locked ? (
-                  <div className="text-center text-xs text-festi-gold py-2 rounded-lg bg-festi-bg/50 border border-festi-border">
-                    🔒 Débloqué au niveau {reqLevel?.emoji} {reqLevel?.label}
-                  </div>
-                ) : (
-                  <button
-                    className={cx('w-full', isBooked ? 'btn-danger' : 'btn-primary', !affordable && 'opacity-50')}
-                    disabled={!isBooked && !affordable}
-                    onClick={() => toggleArtist(a.id)}
-                  >
-                    {isBooked ? '✓ Programmé — retirer' : affordable ? '+ Programmer' : 'Budget insuffisant'}
-                  </button>
-                )}
+                <button
+                  className={cx('w-full', isBooked ? 'btn-danger' : 'btn-primary', !affordable && 'opacity-50')}
+                  disabled={!isBooked && !affordable}
+                  onClick={() => toggleArtist(a.id)}
+                >
+                  {isBooked ? '✓ Programmé — retirer' : affordable ? '+ Programmer' : 'Budget insuffisant'}
+                </button>
               </div>
             </div>
           );

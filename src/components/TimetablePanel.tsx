@@ -41,6 +41,11 @@ export default function TimetablePanel() {
   const availableStages = STAGE_IDS.filter(
     (id) => (game.plan.infrastructures[id] ?? 0) > 0,
   );
+  const availableStageSet = new Set(availableStages);
+
+  // Seuls les créneaux sur une scène encore disponible comptent (résilience :
+  // un ancien créneau sur une scène supprimée ne doit pas bloquer l'artiste).
+  const liveSlots = game.plan.timetable.filter((s) => availableStageSet.has(s.stageId));
 
   const stageCapacity = (stageId: string) => {
     const opt = INFRASTRUCTURES.find((i) => i.id === stageId);
@@ -55,11 +60,11 @@ export default function TimetablePanel() {
 
   // Artistes déjà programmés aujourd'hui
   const scheduledTodayIds = new Set(
-    game.plan.timetable.filter((s) => s.day === activeDay).map((s) => s.artistId),
+    liveSlots.filter((s) => s.day === activeDay).map((s) => s.artistId),
   );
 
   // Artistes déjà programmés du tout
-  const scheduledIds = new Set(game.plan.timetable.map((s) => s.artistId));
+  const scheduledIds = new Set(liveSlots.map((s) => s.artistId));
 
   // Calcule l'affluence attendue dans un créneau (pour l'affichage)
   const SLOT_CROWD = [0.25, 0.45, 0.65, 1.0, 0.85];

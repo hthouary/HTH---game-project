@@ -202,7 +202,10 @@ export const useGameStore = create<GameStore>()(
           const infra = { ...s.game.plan.infrastructures };
           if (qty <= 0) delete infra[id];
           else infra[id] = qty;
-          return { game: { ...s.game, plan: { ...s.game.plan, infrastructures: infra } } };
+          // Une scène retirée annule la programmation qui lui était assignée :
+          // les artistes concernés redeviennent disponibles dans le timetable.
+          const timetable = s.game.plan.timetable.filter((slot) => (infra[slot.stageId] ?? 0) > 0);
+          return { game: { ...s.game, plan: { ...s.game.plan, infrastructures: infra, timetable } } };
         }),
 
       incInfra: (id, delta) => {
