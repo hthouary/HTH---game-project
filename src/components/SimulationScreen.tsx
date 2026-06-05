@@ -2,10 +2,13 @@ import { useMemo, useState } from 'react';
 import { useGameStore } from '../store/gameStore';
 import { usePlanSummary } from '../hooks/usePlanSummary';
 import { rollEvents, type EventRollContext, type ResolvedChoice } from '../engine/events';
+import { analyzeLayout } from '../engine/layout';
+import { INFRA_MAP } from '../data/infrastructures';
 import { WEATHER_MAP } from '../data/weather';
 import { Badge, SectionHeader, cx } from './ui';
 import { formatMoney, formatMoneyShort, formatNumber } from '../utils/format';
 import { makeRng } from '../utils/rng';
+import type { GamePhase } from '../types';
 
 export default function SimulationScreen() {
   const game = useGameStore((s) => s.game);
@@ -36,10 +39,52 @@ export default function SimulationScreen() {
   if (!game.festival || !summary) return null;
   const weather = WEATHER_MAP[game.forecast];
   const { projection, lineup, infra } = summary;
+  const days = game.festival.days ?? 1;
 
   const noStage = infra.stageCapacity <= 0;
   const noArtist = lineup.count <= 0;
   const blocked = noStage || noArtist;
+
+  // Points de vigilance (non bloquants) — relient les nouveaux systèmes au lancement
+  const layoutAnalysis = analyzeLayout(game.plan.layout ?? [], INFRA_MAP, game.plan.infrastructures);
+  const scheduledCount = new Set(game.plan.timetable.map((s) => s.artistId)).size;
+  const unscheduled = Math.max(0, game.plan.bookedArtistIds.length - scheduledCount);
+
+  const advisories: { phase: GamePhase; icon: string; text: string }[] = [];
+  if (layoutAnalysis.totalOwned > 0 && layoutAnalysis.placedCount < layoutAnalysis.totalOwned) {
+    const missing = layoutAnalysis.totalOwned - layoutAnalysis.placedCount;
+    advisories.push({
+      phase: 'layout',
+      icon: '📍',
+      text: `${missing} équipement${missing > 1 ? 's' : ''} non placé${missing > 1 ? 's' : ''} sur le plan — aucun effet d'organisation tant qu'ils ne sont pas positionnés.`,
+    });
+  } else if (layoutAnalysis.placedCount > 0 && layoutAnalysis.score < 45) {
+    advisories.push({
+      phase: 'layout',
+      icon: '📍',
+      text: `Plan du site mal agencé (score ${layoutAnalysis.score}/100) : la satisfaction des infrastructures est pénalisée.`,
+    });
+  }
+  if (game.plan.timetable.length > 0 && unscheduled > 0) {
+    advisories.push({
+      phase: 'timetable',
+      icon: '🗓️',
+      text: `${unscheduled} artiste${unscheduled > 1 ? 's' : ''} réservé${unscheduled > 1 ? 's' : ''} mais non programmé${unscheduled > 1 ? 's' : ''} à l'horaire — leur cachet est payé pour rien.`,
+    });
+  }
+  if (projection.soldOut) {
+    advisories.push({
+      phase: 'format',
+      icon: '🔥',
+      text: 'Complet prévu : vous pourriez monter le prix du billet ou agrandir la capacité.',
+    });
+  } else if (projection.demandPressure < 0.35 && projection.expectedAttendance > 0) {
+    advisories.push({
+      phase: 'format',
+      icon: '📉',
+      text: 'Jauge surdimensionnée vs demande : réduisez la capacité ou renforcez line-up & marketing.',
+    });
+  }
 
   const eventCost = triggered.reduce((sum, def) => {
     const idx = choices[def.id] ?? 0;
@@ -72,10 +117,20 @@ export default function SimulationScreen() {
         <h3 className="font-bold mb-3">📋 Récapitulatif de l'édition</h3>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
           <Recap label="Météo prévue" value={`${weather.emoji} ${weather.label}`} />
+          <Recap label="Durée" value={`${days} jour${days > 1 ? 's' : ''}`} />
           <Recap label="Tête d'affiche" value={lineup.headliners[0]?.name ?? '—'} />
           <Recap label="Artistes" value={`${lineup.count}`} />
           <Recap label="Capacité" value={formatNumber(projection.capacity)} />
-          <Recap label="Affluence prévue" value={formatNumber(projection.expectedAttendance)} />
+          <Recap
+            label="Affluence prévue"
+            value={projection.soldOut ? `${formatNumber(projection.expectedAttendance)} 🔥` : formatNumber(projection.expectedAttendance)}
+            tone={projection.soldOut ? 'mint' : undefined}
+          />
+          <Recap
+            label="Plan du site"
+            value={projection.layoutScore != null ? `${projection.layoutScore}/100` : 'Non fait'}
+            tone={projection.layoutScore != null && projection.layoutScore >= 70 ? 'mint' : projection.layoutScore != null && projection.layoutScore < 45 ? 'danger' : undefined}
+          />
           <Recap label="Prix billet" value={`${game.plan.ticketPrice} €`} />
           <Recap label="Sponsors" value={`${game.plan.acceptedSponsorIds.length}`} />
           <Recap
@@ -100,6 +155,29 @@ export default function SimulationScreen() {
         <div className="panel p-4 border-festi-gold/50 bg-festi-gold/10 text-sm">
           ⚠️ Vous avez engagé {formatMoney(-summary.available)} de plus que votre trésorerie. Le festival
           peut être déficitaire si les recettes ne suivent pas.
+        </div>
+      )}
+
+      {/* Points de vigilance */}
+      {advisories.length > 0 && !blocked && (
+        <div className="panel p-4">
+          <h3 className="font-bold mb-1 flex items-center gap-2">🧐 Points de vigilance</h3>
+          <p className="text-xs text-slate-400 mb-3">
+            Rien ne bloque le lancement, mais ces réglages peuvent encore être améliorés. Cliquez pour y aller.
+          </p>
+          <div className="space-y-2">
+            {advisories.map((a, i) => (
+              <button
+                key={i}
+                onClick={() => setPhase(a.phase)}
+                className="w-full flex items-center gap-3 p-2.5 rounded-xl bg-festi-gold/10 border border-festi-gold/30 hover:border-festi-gold/60 transition-colors text-left"
+              >
+                <span className="text-lg shrink-0">{a.icon}</span>
+                <span className="text-sm text-slate-200 flex-1">{a.text}</span>
+                <span className="text-slate-400 shrink-0">›</span>
+              </button>
+            ))}
+          </div>
         </div>
       )}
 
